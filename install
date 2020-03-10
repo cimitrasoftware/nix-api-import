@@ -1,0 +1,46 @@
+#!/bin/bash
+# Install/Update Script for Import API for Cimitra
+# Author: Tay Kratzer tay@cimitra.com
+# GitHub Location: https://github.com/cimitrasoftware/nix-api-import
+
+declare SOFTWARE_TITLE="Cimitra API Import Module"
+declare DEFAULT_INSTALL_PATH="/var/opt/cimitra/api/import"
+declare INSTALL_PATH="/var/opt/cimitra/api/import"
+
+echo ""
+echo "Process: Installing ${SOFTWARE_TITLE}"
+mkdir -p ${INSTALL_PATH} 2> /dev/null
+
+declare -i INSTALL_PATH_EXISTS=`test -d ${INSTALL_PATH} ; echo $?`
+
+if [ $INSTALL_PATH_EXISTS -ne 0 ]
+then
+echo ""
+echo "Error: Cannot Access Installation Path: ${INSTALL_PATH}"
+echo ""
+exit 1
+fi
+ 
+cd ${INSTALL_PATH} 2> /dev/null
+
+RESULT=`echo $?` 
+
+if [ $RESULT -ne 0 ]
+then
+echo ""
+echo "Error: Cannot Access Installation Path: ${INSTALL_PATH}"
+echo ""
+exit 1
+fi
+
+{
+curl -LJO https://raw.githubusercontent.com/cimitrasoftware/nix-api-import/master/import
+} 1> /dev/null 2>/dev/null
+chmod +x ./import
+
+echo ""
+echo "Success: Installing ${SOFTWARE_TITLE}"
+
+echo ""
+echo "Module help: cimitra import"
+echo ""
