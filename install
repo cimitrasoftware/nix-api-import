@@ -40,7 +40,8 @@ chmod +x ./import
 
 echo ""
 echo "Success: Installing ${SOFTWARE_TITLE}"
-
 echo ""
 echo "Module help: cimitra import"
+echo ""
+echo "Or: /var/opt/cimitra/api/import/import -h"
 echo ""
