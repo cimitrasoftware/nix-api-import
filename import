@@ -1,0 +1,1687 @@
+#!/bin/bash
+###########################################
+# import                                  #
+# Author: Tay Kratzer - tay@cimitra.com   #
+# Version: 1.0                            #
+# Modify date: 3/18/2020                  
+#
+###########################################
+# Cimitra Command/Script Import Tool
+
+TEMP_FILE_DIRECTORY="/var/tmp"
+
+declare -i CIMITRA_SERVER_ADMIN_PASSWORD_SET=0
+declare -i CIMITRA_SERVER_ADMIN_ACCOUNT_SET=0
+declare -i CIMITRA_APP_NAME_IN_SET=0
+declare -i CIMITRA_APP_COMMAND_IN_SET=0
+declare -i CIMITRA_APP_DESCRIPTION_IN_SET=0
+declare -i SHOW_HELP_SCREEN=0
+declare -i RUN_CONNECTION_TEST=0
+declare CURL_OUTPUT_MODE="--silent"
+declare CIMITRA_SERVER_ADDRESS=""
+declare CIMITRA_SERVER_PORT=""
+declare CIMITRA_PAIRED_AGENT_ID=""
+declare CIMITRA_PAIRED_AGENT_PLATFORM="linux"
+declare CIMITRA_API_SESSION_TOKEN=""
+declare -i CIMITRA_APP_INTERPRETER_IN_SET=0
+declare CIMITRA_ADMIN_CHECK="roles:255"
+declare CIMITRA_AGENT_BIN_FILE=""
+declare CIMITRA_APP_COMMAND_IN=""
+declare -i VERBOSE_MODE=0
+declare -i SHOW_MENU_SCREEN=0
+declare FOLDER_ID_IN_NAME=""
+declare -i FOLDER_NAME_IN_SET=0
+declare -i FORCE_INTERPRETER_SETTING_REQUEST=0
+declare INTERPRETER_SUGGESTION="1"
+declare -i BULK_MODE=1
+declare -i APP_COMMMAND_IN_PROCESSED=0
+declare -i BULK_MODE_SKIP_ADMIN_CREDENTIALS=1
+declare -i BULK_MODE_SKIP_ADMIN_CREDENTIALS_ESTABLISHED=0
+declare CIMITRA_API_SCRIPT_SETTINGS_DIR="/var/opt/cimitra/api"
+mkdir -p ${CIMITRA_API_SCRIPT_SETTINGS_DIR} 2> /dev/null
+declare CIMITRA_API_SCRIPT_SETTINGS_FILE="/var/opt/cimitra/api/import.cfg"
+source ${CIMITRA_API_SCRIPT_SETTINGS_FILE} 1> /dev/null 2> /dev/null
+
+declare CIMITRA_IMPORT_ROOT_FOLDER_ID=""
+declare CIMITRA_ROOT_FOLDER_ID=""
+declare CIMITRA_IMPORT_HOSTNAME_ROOT_FOLDER_ID=""
+declare -i FOLDER_ID_IN_SET=0
+declare -i INCLUDE_REGEX_EXAMPLE_SWITCHES=0
+declare -i DELETE_IMPORT_APPS=0
+
+
+declare CIMITRA_APP_SWITCHES_IN=""
+declare -i CIMITRA_APP_SWITCHES_IN_SET=0
+declare -i CIMITRA_INFO_NOTES_IN_SET=0
+declare CIMITRA_INFO_NOTES_IN=""
+
+declare -i INPUT_FIELD_COUNTER=0
+
+declare -i INPUT_ONE_FIELD_IN_EXISTS=0
+declare INPUT_ONE_FIELD_CONTENTS=""
+declare INPUT_ONE_FLAG=""
+declare INPUT_ONE_NAME=""
+declare INPUT_ONE_EXAMPLE=""
+declare INPUT_ONE_MASK=""
+
+declare -i INPUT_TWO_FIELD_IN_EXISTS=0
+declare INPUT_TWO_FIELD_CONTENTS=""
+declare INPUT_TWO_FLAG=""
+declare INPUT_TWO_NAME=""
+declare INPUT_TWO_EXAMPLE=""
+declare INPUT_TWO_MASK=""
+
+declare -i INPUT_THREE_FIELD_IN_EXISTS=0
+declare INPUT_THREE_FIELD_CONTENTS=""
+declare INPUT_THREE_FLAG=""
+declare INPUT_THREE_NAME=""
+declare INPUT_THREE_EXAMPLE=""
+declare INPUT_THREE_MASK=""
+
+
+while getopts "g:f:n:u:p:c:i:hadbmrstv" opt 1> /dev/null 2> /dev/null; do
+  case ${opt} in 
+  	a) BULK_MODE_SKIP_ADMIN_CREDENTIALS=0
+      ;;
+  	d) DELETE_IMPORT_APPS=1
+      ;;
+    p) CIMITRA_SERVER_ADMIN_PASSWORD="$OPTARG"
+	CIMITRA_SERVER_ADMIN_PASSWORD_SET=1
+      ;;
+    u) CIMITRA_SERVER_ADMIN_ACCOUNT="$OPTARG"
+	CIMITRA_SERVER_ADMIN_ACCOUNT_SET=1
+      ;;
+    n) CIMITRA_APP_NAME_IN="$OPTARG"
+	CIMITRA_APP_NAME_IN_SET=1
+      ;;
+	b) BULK_MODE=0
+      ;;
+    c) CIMITRA_APP_COMMAND_IN="$OPTARG"
+	CIMITRA_APP_COMMAND_IN_SET=1
+	;;
+    g) FOLDER_ID_IN="$OPTARG"
+	FOLDER_ID_IN_SET=1
+	;;
+    f) FOLDER_NAME_IN="$OPTARG"
+	FOLDER_NAME_IN_SET=1
+	;;
+    i) CIMITRA_APP_INTERPRETER_IN="$OPTARG"
+	CIMITRA_APP_INTERPRETER_IN_SET=1
+	FORCE_INTERPRETER_SETTING_REQUEST=1
+	;;
+    h) SHOW_HELP_SCREEN=1
+      ;;
+    m) SHOW_MENU_SCREEN=1
+      ;;
+    r) INCLUDE_REGEX_EXAMPLE_SWITCHES=1
+      ;;
+    s) CIMITRA_API_SCRIPT_SETTINGS_FILE_IN="$OPTARG"
+	   CIMITRA_API_SCRIPT_SETTINGS_FILE_IN_SET=1
+	;;
+    t) RUN_CONNECTION_TEST=1
+      ;;
+    v) CURL_OUTPUT_MODE=""
+	VERBOSE_MODE=1
+      ;;
+  esac 
+done
+
+function CALL_EXIT()
+{
+EXIT_CODE=$1
+echo -e "\e[0m"
+echo ""
+exit ${EXIT_CODE}
+}
+
+SCRIPT_PATH="$( cd "$(dirname "$0")" ; pwd -P )"
+
+PROGRAM_NAME="cimitra import"
+
+COMMAND_LINE_IN=`echo $@`
+
+
+declare -i APP_NAME_IN_EXISTS=`echo "${COMMAND_LINE_IN}" | grep -c "name="`
+
+if [ $APP_NAME_IN_EXISTS -eq 1 ]
+then
+CIMITRA_APP_NAME_IN=`echo "${COMMAND_LINE_IN}" | awk -F "name=" '{printf $2}' | awk -F "^" '{printf $1}'`
+CIMITRA_APP_NAME_IN_SET=1
+	if [ $VERBOSE_MODE -eq 1 ]
+	then
+	echo "App Name = $CIMITRA_APP_NAME_IN"
+	fi
+else
+
+	declare -i APP_NAME_IN_EXISTS=`echo "${COMMAND_LINE_IN}" | grep -c "n="`
+	if [ $APP_NAME_IN_EXISTS -eq 1 ]
+	then
+	CIMITRA_APP_NAME_IN=`echo "${COMMAND_LINE_IN}" | awk -F "n=" '{printf $2}' | awk -F "^" '{printf $1}'`
+	CIMITRA_APP_NAME_IN_SET=1
+		if [ $VERBOSE_MODE -eq 1 ]
+		then
+		echo "App Name = $CIMITRA_APP_NAME_IN"
+		fi
+	fi
+
+fi
+
+declare -i COMMAND_NAME_IN_EXISTS=`echo "${COMMAND_LINE_IN}" | grep -c "command="`
+
+if [ $COMMAND_NAME_IN_EXISTS -eq 1 ]
+then
+CIMITRA_APP_COMMAND_IN=`echo "${COMMAND_LINE_IN}" | awk -F "command=" '{printf $2}' | awk -F "^" '{printf $1}'`
+CIMITRA_APP_COMMAND_IN_SET=1
+	if [ $VERBOSE_MODE -eq 1 ]
+	then
+	echo "Command = $CIMITRA_APP_COMMAND_IN"
+	fi
+else
+
+	declare -i COMMAND_NAME_IN_EXISTS=`echo "${COMMAND_LINE_IN}" | grep -c "c="`
+	if [ $COMMAND_NAME_IN_EXISTS -eq 1 ]
+	then
+	CIMITRA_APP_COMMAND_IN=`echo "${COMMAND_LINE_IN}" | awk -F "c=" '{printf $2}' | awk -F "^" '{printf $1}'`
+	CIMITRA_APP_COMMAND_IN_SET=1
+		if [ $VERBOSE_MODE -eq 1 ]
+		then
+		echo "Command = $CIMITRA_APP_COMMAND_IN"
+		fi
+	fi
+
+fi
+
+
+declare -i INTERPRETER_NAME_IN_EXISTS=`echo "${COMMAND_LINE_IN}" | grep -c "interpreter="`
+
+if [ $INTERPRETER_NAME_IN_EXISTS -eq 1 ]
+then
+CIMITRA_APP_INTERPRETER_IN=`echo "${COMMAND_LINE_IN}" | awk -F "interpreter=" '{printf $2}' | awk -F "^" '{printf $1}'`
+CIMITRA_APP_INTERPRETER_IN_SET=1
+	if [ $VERBOSE_MODE -eq 1 ]
+	then
+	echo "Interpeter = $CIMITRA_APP_INTERPRETER_IN"
+	fi
+else
+
+	declare -i INTERPRETER_NAME_IN_EXISTS=`echo "${COMMAND_LINE_IN}" | grep -c "i="`
+	if [ $INTERPRETER_NAME_IN_EXISTS -eq 1 ]
+	then
+	CIMITRA_APP_INTERPRETER_IN=`echo "${COMMAND_LINE_IN}" | awk -F "i=" '{printf $2}' | awk -F "^" '{printf $1}'`
+	CIMITRA_APP_INTERPRETER_IN_IN_SET=1
+		if [ $VERBOSE_MODE -eq 1 ]
+		then
+		echo "Interpeter = $CIMITRA_APP_INTERPRETER_IN"
+		fi
+	fi
+
+fi
+
+declare -i SWITCHES_IN_EXISTS=`echo "${COMMAND_LINE_IN}" | grep -c "switches="`
+
+if [ $SWITCHES_IN_EXISTS -eq 1 ]
+then
+
+CIMITRA_APP_SWITCHES_IN=`echo "${COMMAND_LINE_IN}" | awk -F "switches=" '{printf $2}' | awk -F "^" '{printf $1}'`
+CIMITRA_APP_SWITCHES_IN_SET=1
+	if [ $VERBOSE_MODE -eq 1 ]
+	then
+	echo "Switches = $CIMITRA_APP_SWITCHES_IN"
+	fi
+else
+
+	SWITCHES_IN_EXISTS=`echo "${COMMAND_LINE_IN}" | grep -c "s="`
+	
+	if [ $SWITCHES_IN_EXISTS -eq 1 ]
+	then
+	CIMITRA_APP_SWITCHES_IN=`echo "${COMMAND_LINE_IN}" | awk -F "s=" '{printf $2}' | awk -F "^" '{printf $1}'`
+	CIMITRA_APP_SWITCHES_IN_SET=1
+		if [ $VERBOSE_MODE -eq 1 ]
+		then
+		echo "Switches = $CIMITRA_APP_SWITCHES_IN"
+		fi
+	fi
+
+fi
+
+declare -i CIMITRA_INFO_NOTES_IN_EXISTS=`echo "${COMMAND_LINE_IN}" | grep -c "infonote="`
+
+if [ $CIMITRA_INFO_NOTES_IN_EXISTS -eq 1 ]
+then
+
+	CIMITRA_INFO_NOTES_IN=`echo "${COMMAND_LINE_IN}" | awk -F "infonote=" '{printf $2}' | awk -F "^" '{printf $1}'`
+	CIMITRA_INFO_NOTES_IN_SET=1
+	if [ $VERBOSE_MODE -eq 1 ]
+	then
+	echo "Info Note = $CIMITRA_INFO_NOTES_IN_EXISTS_IN"
+	fi
+else
+
+	declare -i CIMITRA_INFO_NOTES_IN_EXISTS=`echo "${COMMAND_LINE_IN}" | grep -c "in="`
+	
+	if [ $CIMITRA_INFO_NOTES_IN_EXISTS -eq 1 ]
+	then
+	CIMITRA_INFO_NOTES_IN=`echo "${COMMAND_LINE_IN}" | awk -F "in=" '{printf $2}' | awk -F "^" '{printf $1}'`
+	CIMITRA_INFO_NOTES_IN_SET=1
+		if [ $VERBOSE_MODE -eq 1 ]
+		then
+	echo "Info Note = $CIMITRA_INFO_NOTES_IN_EXISTS_IN"
+		fi
+	fi
+
+fi
+
+
+INPUT_ONE_FIELD_IN_EXISTS=`echo "${COMMAND_LINE_IN}" | grep -c "inputone="`
+
+if [ $INPUT_ONE_FIELD_IN_EXISTS -eq 1 ]
+then
+INPUT_FIELD_COUNTER="1"
+declare INPUT_ONE_FIELD_CONTENTS=`echo "${COMMAND_LINE_IN}" | awk -F "inputone=" '{printf $2}' | awk -F "^" '{printf $1}'`
+else
+
+	declare -i INPUT_ONE_FIELD_IN_EXISTS=`echo "${COMMAND_LINE_IN}" | grep -c "i1="`
+	if [ $INPUT_ONE_FIELD_IN_EXISTS -eq 1 ]
+	then
+	declare INPUT_ONE_FIELD_CONTENTS=`echo "${COMMAND_LINE_IN}" | awk -F "i1=" '{printf $2}' | awk -F "^" '{printf $1}'`
+	fi
+
+fi
+
+if [ $INPUT_ONE_FIELD_IN_EXISTS -eq 1 ]
+then
+INPUT_ONE_FLAG=`echo "${INPUT_ONE_FIELD_CONTENTS}" | awk -F "@" '{printf $1}'`
+INPUT_ONE_NAME=`echo "${INPUT_ONE_FIELD_CONTENTS}" | awk -F "@" '{printf $2}'`
+INPUT_ONE_EXAMPLE=`echo "${INPUT_ONE_FIELD_CONTENTS}" | awk -F "@" '{printf $3}'`
+INPUT_ONE_MASK=`echo "${INPUT_ONE_FIELD_CONTENTS}" | awk -F "@" '{printf $4}'`
+fi
+
+
+INPUT_TWO_FIELD_IN_EXISTS=`echo "${COMMAND_LINE_IN}" | grep -c "inputtwo="`
+
+if [ $INPUT_TWO_FIELD_IN_EXISTS -eq 1 ]
+then
+INPUT_FIELD_COUNTER="2"
+declare INPUT_TWO_FIELD_CONTENTS=`echo "${COMMAND_LINE_IN}" | awk -F "inputtwo=" '{printf $2}' | awk -F "^" '{printf $1}'`
+else
+
+	declare -i INPUT_TWO_FIELD_IN_EXISTS=`echo "${COMMAND_LINE_IN}" | grep -c "i2="`
+	if [ $INPUT_TWO_FIELD_IN_EXISTS -eq 1 ]
+	then
+	declare INPUT_TWO_FIELD_CONTENTS=`echo "${COMMAND_LINE_IN}" | awk -F "i2=" '{printf $2}' | awk -F "^" '{printf $1}'`
+	fi
+
+fi
+
+if [ $INPUT_TWO_FIELD_IN_EXISTS -eq 1 ]
+then
+INPUT_TWO_FLAG=`echo "${INPUT_TWO_FIELD_CONTENTS}" | awk -F "@" '{printf $1}'`
+INPUT_TWO_NAME=`echo "${INPUT_TWO_FIELD_CONTENTS}" | awk -F "@" '{printf $2}'`
+INPUT_TWO_EXAMPLE=`echo "${INPUT_TWO_FIELD_CONTENTS}" | awk -F "@" '{printf $3}'`
+INPUT_TWO_MASK=`echo "${INPUT_TWO_FIELD_CONTENTS}" | awk -F "@" '{printf $4}'`
+fi
+
+
+INPUT_THREE_FIELD_IN_EXISTS=`echo "${COMMAND_LINE_IN}" | grep -c "inputthree="`
+
+if [ $INPUT_THREE_FIELD_IN_EXISTS -eq 1 ]
+then
+INPUT_FIELD_COUNTER="3"
+declare INPUT_THREE_FIELD_CONTENTS=`echo "${COMMAND_LINE_IN}" | awk -F "inputthree=" '{printf $2}' | awk -F "^" '{printf $1}'`
+else
+
+	INPUT_THREE_FIELD_IN_EXISTS=`echo "${COMMAND_LINE_IN}" | grep -c "i3="`
+	if [ $INPUT_THREE_FIELD_IN_EXISTS -eq 1 ]
+	then
+	declare INPUT_THREE_FIELD_CONTENTS=`echo "${COMMAND_LINE_IN}" | awk -F "i3=" '{printf $2}' | awk -F "^" '{printf $1}'`
+	fi
+
+fi
+
+if [ $INPUT_THREE_FIELD_IN_EXISTS -eq 1 ]
+then
+INPUT_THREE_FLAG=`echo "${INPUT_THREE_FIELD_CONTENTS}" | awk -F "@" '{printf $1}'`
+INPUT_THREE_NAME=`echo "${INPUT_THREE_FIELD_CONTENTS}" | awk -F "@" '{printf $2}'`
+INPUT_THREE_EXAMPLE=`echo "${INPUT_THREE_FIELD_CONTENTS}" | awk -F "@" '{printf $3}'`
+INPUT_THREE_MASK=`echo "${INPUT_THREE_FIELD_CONTENTS}" | awk -F "@" '{printf $4}'`
+fi
+
+
+declare MENU_REQUEST_EXISTS=`echo "${1}" | grep -ic "menu"`
+
+if [ $MENU_REQUEST_EXISTS -gt 0 ]
+then
+SHOW_MENU_SCREEN="1"
+fi
+
+declare HELP_REQUEST_EXISTS=`echo "${1}" | grep -ic "help"`
+
+if [ $HELP_REQUEST_EXISTS -gt 0 ]
+then
+SHOW_HELP_SCREEN="1"
+fi
+
+### Help Screen ###
+function SHOW_HELP()
+{
+echo "--- Script Help ---"
+echo ""
+echo "Cimitra Command/Script Import Tool"
+echo ""
+echo "Script usage:  ${PROGRAM_NAME} [options]"
+echo -e "\e[0m"
+echo -e "\e[41mCommon Usage:   ${PROGRAM_NAME} menu \e[0m"
+echo ""
+echo "----------------------------------------------------------------------------------------"
+echo "Menu Mode:     ${PROGRAM_NAME} -m (or) ${PROGRAM_NAME} menu"
+echo ""
+echo "Menu Mode:     ${PROGRAM_NAME} -b -m ...  | Disable Bulk Import Mode"
+echo ""
+echo "Menu Mode:     ${PROGRAM_NAME} -a -m ...  | Prompt Every Time for Admin User" 
+echo ""
+echo "Menu Mode:     ${PROGRAM_NAME} -r -m ...  | Add 2 Example Validating Regex Fields" 
+echo ""
+echo "----------------------------------------------------------------------------------------"
+echo "Command Line Mode"
+echo ""
+echo "NOTE: Command Line Mode Delimeter is the carat character \"^\""
+echo ""
+echo "${PROGRAM_NAME} -b -u <admin user> -p <admin password> name=App Name^ command=App Command^ interpreter=/bin/sh^ switches=status^ infonote=Apache Status^"
+echo ""
+echo "Example: ${PROGRAM_NAME}./import -b -u admin@cimitra.com -p LetMeInNow name=\"Web Server Status\"^ command=/etc/init.d/apache^ interpreter=/bin/sh^ switches=status^"
+#"Example: ${PROGRAM_NAME}./import -b -u admin@cimitra.com -p LetMeInNow name=\"Web Server Status\"^ command=/etc/init.d/apache^ interpreter=/bin/sh^ switches=status^ #     infonote=Apache Status^ inputone=\"
+#-f@LABEL@ENTER SOMETHING@false\"^ inputtwo=\"-p@LABEL@ENTER PASSWORD@true\"^"
+echo ""
+echo "Include Validing Regex Examples For The Cimitra App:  ${PROGRAM_NAME} -r ..."
+echo ""
+echo "----------------------------------------------------------------------------------------"
+echo "Verbose Mode:  ${PROGRAM_NAME} -v ..."
+echo ""
+echo "Bulk Delete Mode - Delete All Apps in Import Folder: ${PROGRAM_NAME} -d"
+echo ""
+echo "Help:          ${PROGRAM_NAME} -h (or) ${PROGRAM_NAME} help"
+echo ""
+echo -e "\e[41mCommon Usage:   ${PROGRAM_NAME} menu \e[0m"
+}
+# echo "$@"
+echo ""
+
+
+function TEXT_EDITOR_REPLACE()
+{
+# TEXT_EDITOR_REPLACE "SETTING_NAME" "${SETTING_VARIABLE}" "$CONFIG_FILE"
+
+declare -i ARG_ONE_EMPTY=`echo "$1" | wc -c`
+declare -i ARG_TWO_EMPTY=`echo "$2" | wc -c`
+declare -i ARG_THREE_EMPTY=`echo "$3" | wc -c`
+
+TEMP_FILE_ONE="${TEMP_FILE_DIRECTORY}/$$.1.tmp"
+TEMP_FILE_TWO="${TEMP_FILE_DIRECTORY}/$$.1.tmp"
+
+if [ $ARG_ONE_EMPTY -lt 2 ]
+then
+return
+else
+:
+fi
+if [ $ARG_TWO_EMPTY -lt 2 ]
+then
+return
+else
+:
+fi
+if [ $ARG_THREE_EMPTY -lt 2 ]
+then
+return
+else
+:
+fi
+
+touch $3
+declare -i LINES_PRIOR_TO_REMOVAL=`grep -c "=" $3`
+declare -i EQUALS_EXIST=`grep -c "=" $3`
+
+egrep -v "${1}=" $3 | sed '/^[[:space:]]*$/d' > ${TEMP_FILE_ONE}
+
+
+declare -i LINES_AFTER_REMOVAL=`grep -c "=" ${TEMP_FILE_ONE}`
+declare -i DIFFERENCE_OF_LINES_REMOVED=0
+let DIFFERENCE_OF_LINES_REMOVED=LINES_PRIOR_TO_REMOVAL-LINES_AFTER_REMOVAL
+
+if [ $DIFFERENCE_OF_LINES_REMOVED -gt 3 ]
+then
+rm ${TEMP_FILE_ONE}
+echo ""
+date
+echo "It seems something is wrong, this setting change will not be made"
+echo ""
+fi
+
+
+rm $3
+mv ${TEMP_FILE_ONE} $3 
+echo "${1}=\"${2}\"" >> $3
+
+} # 2> /dev/null
+
+
+function REMOVE_ALL_APPS_FROM_FOLDER()
+{
+
+FOLDER_IN="${CIMITRA_IMPORT_HOSTNAME_ROOT_FOLDER_ID}"
+
+TEMP_FILE_ONE="${TEMP_FILE_DIRECTORY}/$$.1.tmp"
+
+TEMP_FILE_TWO="${TEMP_FILE_DIRECTORY}/$$.2.tmp"
+
+BASEURL="https://${CIMITRA_SERVER_ADDRESS}:${CIMITRA_SERVER_PORT}/api"
+
+ENDPOINT="/apps/${FOLDER_IN}/children"
+
+URL="${BASEURL}${ENDPOINT}" 
+
+{
+declare RESPONSE=`curl -k ${CURL_OUTPUT_MODE} -H 'Accept: application/json' \
+-H "Authorization: Bearer ${CIMITRA_API_SESSION_TOKEN}" \
+-X GET ${URL}`
+} 1> /dev/null 2> /dev/null
+
+echo "$RESPONSE" 1> ${TEMP_FILE_ONE}
+
+sed -e 's/[}"]*\(.\)[{"]*/\1/g;y/,/\n/' < ${TEMP_FILE_ONE} > ${TEMP_FILE_TWO}
+
+declare -i IDS_EXISTS=`cat ${TEMP_FILE_TWO} | grep -c "_id:"`
+
+BASEURL="https://${CIMITRA_SERVER_ADDRESS}:${CIMITRA_SERVER_PORT}/api"
+
+URL="${BASEURL}${ENDPOINT}" 
+
+if [ $IDS_EXISTS -gt 0 ]
+then
+rm ${TEMP_FILE_ONE}
+
+cat ${TEMP_FILE_TWO} | grep "_id:" 1> ${TEMP_FILE_ONE}
+
+declare -i COUNTER_UP=1
+
+while read APP_RECORD
+do
+APP_ID=`echo "${APP_RECORD}" | awk -F ":" '{printf $2}'`
+APP_NAME=`cat ${TEMP_FILE_TWO} | grep -A 6 "_id:${APP_ID}" | tail -1 | awk -F ":" '{printf $2}'`
+echo ""
+echo "Deleting App #${COUNTER_UP}: ${APP_NAME}"
+ENDPOINT="/apps/${APP_ID}"
+
+URL="${BASEURL}${ENDPOINT}" 
+
+{
+declare RESPONSE=`curl -k ${CURL_OUTPUT_MODE} -H 'Accept: application/json' \
+-H "Authorization: Bearer ${CIMITRA_API_SESSION_TOKEN}" \
+-X DELETE ${URL}`
+} 1> /dev/null 2> /dev/null
+
+let COUNTER_UP=COUNTER_UP+1
+done < ${TEMP_FILE_ONE}
+
+fi
+
+rm ${TEMP_FILE_ONE} 2> /dev/null
+rm ${TEMP_FILE_TWO} 2> /dev/null
+
+}
+
+
+function INTERPRETER_TYPE_GUESS()
+{
+
+if [ $APP_COMMMAND_IN_PROCESSED -eq 0 ]
+then
+
+CIMITRA_APP_NAME_IN_COMMAND=`echo "${CIMITRA_APP_COMMAND_IN}" | awk '{printf $1}'`
+
+declare -i COMMAND_FILE_EXISTS=`test -f ${CIMITRA_APP_NAME_IN_COMMAND} ; echo $?`
+
+
+	if [ $COMMAND_FILE_EXISTS -ne 0 ]
+	then
+	CIMITRA_APP_NAME_IN_COMMAND=`whereis ${CIMITRA_APP_NAME_IN_COMMAND} | awk '{printf $2}'`
+	{
+	COMMAND_FILE_EXISTS=`ls ${CIMITRA_APP_COMMAND_IN} ; echo $?`
+	} 1> dev/null 2> /dev/null
+		
+		if [ $COMMAND_FILE_EXISTS -ne 0 ]
+		then
+		INTERPRETER_SUGGESTION="/bin/bash"
+		return 0
+		fi
+	
+	fi
+
+
+fi
+
+CIMITRA_APP_NAME_IN_COMMAND=`echo "${CIMITRA_APP_NAME_IN_COMMAND}" | awk '{printf $1}'`
+{
+COMMAND_FILE_TYPE=`file ${CIMITRA_APP_NAME_IN_COMMAND}`
+} 1> /dev/null 2> /dev/null
+declare -i IS_BIN=`echo "${COMMAND_FILE_TYPE}" | grep -ic buildid`
+
+	if [ $IS_BIN -gt 0 ]
+	then
+	INTERPRETER_SUGGESTION="0"
+	return 0
+	fi
+	
+	declare -i IS_ASCII=`echo "${COMMAND_FILE_TYPE}" | grep -ic "ascii text"`
+
+	if [ $IS_ASCII -gt 0 ]
+	then
+
+		declare -i BIN_SH=`echo "${COMMAND_FILE_TYPE}" | grep -ic "POSIX shell script"`
+		
+		if [ $BIN_SH -gt 0 ]
+		then
+		
+		declare -i BIN_SH_CONFIRMED=`cat ${CIMITRA_APP_NAME_IN_COMMAND} | head -5 | grep -c "/bin/sh"`
+		
+			if [ $BIN_SH_CONFIRMED -gt 0 ]
+			then
+				INTERPRETER_SUGGESTION="/bin/sh"
+				return 0
+			else
+				INTERPRETER_SUGGESTION=`cat ${CIMITRA_APP_NAME_IN_COMMAND} | head -5 | grep -c "/bin" | head -1 | awk -F \#! '{printf $2}'`
+				return 0
+			fi
+		
+		
+		fi
+		
+		declare -i BIN_BASH=`echo "${COMMAND_FILE_TYPE}" | grep -ic "POSIX shell script"`
+	
+	
+		if [ $BIN_BASH -gt 0 ]
+		then
+		
+			declare -i BIN_BASH_CONFIRMED=`cat ${CIMITRA_APP_NAME_IN_COMMAND} | head -5 | grep -c "/bin/bash"`
+		
+			if [ $BIN_BASH_CONFIRMED -gt 0 ]
+			then
+				INTERPRETER_SUGGESTION="/bin/bash"
+				return 0
+			else
+				INTERPRETER_SUGGESTION=`cat ${CIMITRA_APP_NAME_IN_COMMAND} | head -5 | grep -c "/bin" | head -1 | awk -F \#! '{printf $2}'`
+			fi
+		
+		
+		fi
+		
+		declare -i BIN_BASH=`echo "${COMMAND_FILE_TYPE}" | grep -ic "POSIX shell script"`
+	
+	
+		declare -i SCRIPT_TYPE_FILE=`echo "${COMMAND_FILE_TYPE}" | grep -ic "script"`
+	
+		if [ $SCRIPT_TYPE_FILE -gt 0 ]
+		then
+		
+		INTERPRETER_SUGGESTION=`cat ${CIMITRA_APP_NAME_IN_COMMAND} | head -5 | grep "#!" | head -1 | awk -F "!" '{printf $2}'`
+		return 0
+		
+		fi
+	
+
+
+fi
+	
+}
+
+function MENU_SCREEN()
+{
+echo -e "\e[0m"
+echo -e "\e[41mCtrl-C To Quit!\033[0;93m\033[0;92m"
+if [[ -z "${CIMITRA_API_SCRIPT_SETTINGS_FILE}" ]] 
+then
+	if [ $CIMITRA_API_SCRIPT_SETTINGS_FILE_IN_SET=1 ]
+	then
+	CIMITRA_API_SCRIPT_SETTINGS_FILE="${CIMITRA_API_SCRIPT_SETTINGS_FILE_IN}"
+	fi
+fi
+
+echo -e "\033[0;93m\033[0;92m"
+echo "-----------------------------------------------"
+echo "| Cimitra Command/Script Import Module | Menu |"
+echo "-----------------------------------------------"
+echo ""
+
+declare -i GET_CREDENTIALS=1
+
+if [ $BULK_MODE_SKIP_ADMIN_CREDENTIALS -eq 1 ]
+then
+	if [ $BULK_MODE_SKIP_ADMIN_CREDENTIALS_ESTABLISHED -eq 1 ]
+	then
+	GET_CREDENTIALS=0
+	fi
+
+fi
+
+if [ $GET_CREDENTIALS -eq 1 ]
+then
+echo -e "\e[41mNOTE: Credentials will be saved to the file: $CIMITRA_API_SCRIPT_SETTINGS_FILE\033[0;93m\033[0;92m"
+echo ""
+echo -e "\e[41mRemove this file after finishing the import process\033[0;93m\033[0;92m"
+echo ""
+CIMITRA_SERVER_ADMIN_ACCOUNT="admin@cimitra.com"
+source ${CIMITRA_API_SCRIPT_SETTINGS_FILE} 1> /dev/null 2> /dev/null
+SUGGESTION="${CIMITRA_SERVER_ADMIN_ACCOUNT}"
+echo -e "\033[0;93m\033[44m[ADMIN LEVEL USER ACCOUNT ON CIMITRA SERVER TO IMPORT COMMANDS TO]\e[0m"
+echo -e "\033[0;93m\033[44m<Edit User or, Enter to accept>\033[0;93m\033[0;92m\033[0;93m\033[0;92m"
+read -p "Admin Level User: " -e -i ${SUGGESTION} INPUT
+
+declare -i INPUT_LENGTH=`echo "${INPUT}" | wc -m`
+declare -i INPUT_VALID=`echo "${INPUT}" | grep -c "@"`
+
+	if [ $INPUT_LENGTH -lt 4 ]
+	then
+		if [ $INPUT_VALID -gt 0 ]
+		then
+		TEXT_EDITOR_REPLACE "CIMITRA_SERVER_ADMIN_ACCOUNT" "${SUGGESTION}" "${CIMITRA_API_SCRIPT_SETTINGS_FILE}"
+		fi
+	else
+		if [ $INPUT_VALID -gt 0 ]
+		then
+		TEXT_EDITOR_REPLACE "CIMITRA_SERVER_ADMIN_ACCOUNT" "${INPUT}" "${CIMITRA_API_SCRIPT_SETTINGS_FILE}"
+		fi
+	fi
+	
+CIMITRA_SERVER_ADMIN_ACCOUNT_SET="1"
+
+TEXT_EDITOR_REPLACE "CIMITRA_SERVER_ADMIN_ACCOUNT_SET" "1" "${CIMITRA_API_SCRIPT_SETTINGS_FILE}"
+
+
+CIMITRA_SERVER_ADMIN_PASSWORD="changeme"
+source ${CIMITRA_API_SCRIPT_SETTINGS_FILE} 1> /dev/null 2> /dev/null
+
+SUGGESTION="${CIMITRA_SERVER_ADMIN_PASSWORD}"
+echo -e "\033[0;93m\033[44m[PASSWORD]\033[0;93m\033[44m\e[0m"
+echo -e "\033[0;93m\033[44m<Edit password, or Enter to accept>\033[0;93m\033[0;92m\033[0;93m\033[0;92m"
+# read -sp "Password: " INPUT
+
+unset thePassword
+echo -n "Password:"
+while IFS= read -p "$prompt" -r -s -n 1 char
+do
+    # Enter - accept password
+    if [[ $char == $'\0' ]] ; then
+        break
+    fi
+    # Backspace
+    if [[ $char == $'\177' ]] ; then
+        prompt=$'\b \b'
+        password="${thePassword%?}"
+    else
+        prompt='*'
+        thePassword+="$char"
+    fi
+done
+
+declare -i INPUT_LENGTH=`echo "${INPUT}" | wc -m`
+declare -i INPUT_VALID=1
+
+	if [ $INPUT_LENGTH -lt 3 ]
+	then
+	:
+	else
+		if [ $INPUT_VALID -gt 0 ]
+		then
+		TEXT_EDITOR_REPLACE "CIMITRA_SERVER_ADMIN_PASSWORD" "${thePassword}" "${CIMITRA_API_SCRIPT_SETTINGS_FILE}"
+		fi
+	fi
+
+
+TEXT_EDITOR_REPLACE "CIMITRA_SERVER_ADMIN_PASSWORD_SET" "1" "${CIMITRA_API_SCRIPT_SETTINGS_FILE}"
+
+CIMITRA_SERVER_ADMIN_PASSWORD_SET="1"
+
+if [ $DELETE_IMPORT_APPS -eq 1 ]
+then
+return 0
+fi
+
+BULK_MODE_SKIP_ADMIN_CREDENTIALS_ESTABLISHED=1
+# Obtained Credentials Already
+fi
+echo ""
+echo -e "\033[0;93m\033[44m[COMMAND OR SCRIPT TO IMPORT]\e[0m"
+echo -e "\033[0;93m\033[44m<Enter the entire command or script Example: /etc/init.d/rcapache2 restart>\033[0;93m\033[0;92m\033[0;93m\033[0;92m"
+read -p "Command or Script: " -e INPUT
+
+declare -i INPUT_LENGTH=`echo "${INPUT}" | wc -m`
+
+	if [ $INPUT_LENGTH -gt 2 ]
+	then
+	CIMITRA_APP_COMMAND_IN="${INPUT}"
+	CIMITRA_APP_COMMAND_IN_SET=1
+	else
+	echo "" 
+	echo "Error: Cannot Create a Cimitra App Without a Command or Script" 
+	echo ""
+	CALL_EXIT 1 
+	fi
+
+echo -e "\033[0;93m\033[44m[CIMITRA APP NAME/LABEL FOR THIS COMMAND]\e[0m"
+echo -e "\033[0;93m\033[44m<For Example: RESTART WEB SERVER>\033[0;93m\033[0;92m\033[0;93m\033[0;92m"
+read -p "APP NAME/LABEL: " -e INPUT
+
+declare -i INPUT_LENGTH=`echo "${INPUT}" | wc -m`
+
+if [ $INPUT_LENGTH -gt 2 ]
+then
+CIMITRA_APP_NAME_IN="${INPUT}"
+CIMITRA_APP_NAME_IN_SET=1
+else
+CIMITRA_APP_NAME_ONE=`basename "${CIMITRA_APP_COMMAND_IN}" | tr [a-z] [A-Z]`
+HOSTNAME=`hostname | tr [a-z] [A-Z]`
+CIMITRA_APP_NAME_IN="${HOSTNAME} ${CIMITRA_APP_NAME_ONE}"
+CIMITRA_APP_NAME_IN_SET=1
+fi
+
+
+CIMITRA_APP_NAME_IN_COMMAND=`echo "${CIMITRA_APP_COMMAND_IN}" | awk '{printf $1}'`
+
+declare -i COMMAND_FILE_EXISTS=`test -f ${CIMITRA_APP_NAME_IN_COMMAND} ; echo $?`
+
+
+if [ $COMMAND_FILE_EXISTS -ne 0 ]
+then
+CIMITRA_APP_NAME_IN_COMMAND=`whereis ${CIMITRA_APP_NAME_IN_COMMAND} | awk '{printf $2}'`
+COMMAND_FILE_EXISTS=`test -f ${CIMITRA_APP_NAME_IN_COMMAND} ; echo $?`
+fi
+
+APP_COMMMAND_IN_PROCESSED=1
+
+
+
+INTERPRETER_SUGGESTION="1"
+
+
+if [ $COMMAND_FILE_EXISTS -eq 0 ]
+then
+
+INTERPRETER_TYPE_GUESS
+
+
+if [ $INTERPRETER_SUGGESTION == 0 ]
+then
+	if [ $FORCE_INTERPRETER_SETTING_REQUEST -eq 0 ]
+	then
+	return 0 
+	fi
+fi
+
+
+fi
+
+if [ $INTERPRETER_SUGGESTION == "1" ]
+then
+INTERPRETER_SUGGESTION="/bin/bash"
+fi
+
+echo -e "\033[0;93m\033[44m[COMMAND/SCRIPT INTERPRETER]\e[0m"
+echo -e "\033[0;93m\033[44m<For Example: /bin/bash>\033[0;93m\033[0;92m\033[0;93m\033[0;92m"
+read -p "INTERPRETER: " -e -i ${INTERPRETER_SUGGESTION} INPUT
+
+CIMITRA_APP_INTERPRETER_IN="$INPUT"
+CIMITRA_APP_INTERPRETER_IN_SET=1
+
+}
+
+if [ $BULK_MODE -eq 0 ]
+then
+
+	if [ $SHOW_MENU_SCREEN -eq 1 ]
+	then
+	MENU_SCREEN
+	fi
+
+fi
+
+function CONFIRM_CORRECT_INPUT()
+{
+
+if [ $DELETE_IMPORT_APPS -eq 1 ]
+then
+return 0
+fi
+
+if [ $SHOW_MENU_SCREEN -eq 0 ]
+then
+
+declare -i ALL_SET=0
+
+let ALL_SET=CIMITRA_SERVER_ADMIN_PASSWORD_SET+CIMITRA_SERVER_ADMIN_ACCOUNT_SET+CIMITRA_APP_COMMAND_IN_SET
+
+if [ $ALL_SET -ne 3 ]
+then
+SHOW_HELP
+echo ""
+echo "NOTE: Insufficient Input To Run Script"
+echo ""
+CALL_EXIT 1
+fi
+
+fi
+
+}
+
+function GET_URL()
+{
+IO_FILE="$1"
+
+# Read values from IO File
+
+source ${IO_FILE}
+
+BASEURL="https://${CIMITRA_SERVER_ADDRESS}:${CIMITRA_SERVER_PORT}/api"
+
+URL="${BASEURL}${ENDPOINT}" 
+
+
+declare RESPONSE=`curl -k ${CURL_OUTPUT_MODE} -H 'Accept: application/json' \
+-H "Authorization: Bearer ${CIMITRA_API_SESSION_TOKEN}" \
+-X GET ${URL}`
+
+echo "$RESPONSE" | sed -e 's/[}"]*\(.\)[{"]*/\1/g;y/,/\n/' 1> ${IO_FILE}
+
+}
+
+function POST_URL()
+{
+IO_FILE="$1"
+
+# Read values from IO File
+
+source ${IO_FILE}
+
+BASEURL="https://${CIMITRA_SERVER_ADDRESS}:${CIMITRA_SERVER_PORT}/api"
+
+URL="${BASEURL}${ENDPOINT}" 
+
+{
+declare RESPONSE=`curl -k ${CURL_OUTPUT_MODE} -H 'Accept: application/json' \
+-H "Authorization: Bearer ${CIMITRA_API_SESSION_TOKEN}" \
+-X POST ${URL} -d @${JSON_INPUT_FILE} \
+-H "Content-Type: application/json"`
+} 1> /dev/null 2> /dev/null
+
+echo "$RESPONSE" | sed -e 's/[}"]*\(.\)[{"]*/\1/g;y/,/\n/' 1> ${IO_FILE}
+
+rm ${JSON_INPUT_FILE} 2> /dev/null
+
+return 0
+}
+
+
+function CREATE_CIMITRA_FOLDER_ENTITY()
+{
+IO_FILE=$1
+NAME=$2
+DESCRIPTION=$3
+PARENT_FOLDER_ID=$4
+# Define JSON temp file
+JSON_TEMP_FILE_ONE="${TEMP_FILE_DIRECTORY}/$$.1.tmp.json"
+
+echo "{
+    \"type\": 2,
+    \"name\": \"${NAME}\",
+    \"description\": \"${DESCRIPTION}\",
+    \"status\": \"active\",
+    \"parentFolderId\":  \"${PARENT_FOLDER_ID}\"
+}" 1> ${JSON_TEMP_FILE_ONE}
+
+
+# Define endpoint
+ENDPOINT="/apps" 
+
+# Add endoint and JSON temp file to I/O file
+echo "ENDPOINT=\"${ENDPOINT}\"" > ${TEMP_FILE_ONE}
+echo "JSON_INPUT_FILE=\"${JSON_TEMP_FILE_ONE}\"" >> ${TEMP_FILE_ONE}
+
+# Call POST_URL Function
+POST_URL "${IO_FILE}"
+return 0
+}
+
+
+function CREATE_OR_ESTABLISH_CIMITRA_IMPORT_FOLDER()
+{
+
+TEMP_FILE_ONE="${TEMP_FILE_DIRECTORY}/$$.1.tmp"
+HOSTNAME=`hostname | tr [a-z] [A-Z]`
+echo ""
+echo "Process: Discovering or Creating The Import Folder Structure"
+ENDPOINT="/apps/${CIMITRA_ROOT_FOLDER_ID}/children" 
+echo "ENDPOINT=\"${ENDPOINT}\"" > ${TEMP_FILE_ONE}
+GET_URL "${TEMP_FILE_ONE}"
+
+
+if [ $FOLDER_ID_IN_SET -eq 1 ]
+then
+
+declare -i FOLDER_ID_IN_SET_EXISTS=`cat ${TEMP_FILE_ONE} | grep -c ${FOLDER_ID_IN}`
+	if [ $FOLDER_ID_IN_SET_EXISTS -eq 0 ]
+	then
+	rm ${TEMP_FILE_ONE} 2> /dev/null
+	echo "" 
+	echo "Error: Could Not Find a Folder With ID: ${FOLDER_ID_IN}" 
+	echo ""
+	CALL_EXIT 1 
+	fi
+	
+FOLDER_ID_IN_NAME=`cat ${TEMP_FILE_ONE} | grep -A 1 ${FOLDER_ID_IN} | tail -1 | awk -F ":" '{printf $2}'`
+
+echo ""
+echo "Success: Discovered the Folder Named | ${FOLDER_ID_IN_NAME}"
+
+rm ${TEMP_FILE_ONE} 2> /dev/null
+CIMITRA_IMPORT_HOSTNAME_ROOT_FOLDER_ID="${FOLDER_ID_IN}"
+return 0
+fi
+
+if [ $FOLDER_NAME_IN_SET -eq 1 ]
+then
+
+declare -i FOLDER_NAME_IN_SET_EXISTS=`cat ${TEMP_FILE_ONE} | grep -c name:${FOLDER_NAME_IN}`
+	if [ $FOLDER_NAME_IN_SET_EXISTS -eq 0 ]
+	then
+	rm ${TEMP_FILE_ONE} 2> /dev/null
+	echo "" 
+	echo "Error: Could Not Find a Folder With Name: ${FOLDER_NAME_IN}" 
+	echo ""
+	CALL_EXIT 1 
+	fi
+	
+CIMITRA_IMPORT_HOSTNAME_ROOT_FOLDER_ID=`cat ${TEMP_FILE_ONE} | grep -B 1 name:${FOLDER_NAME_IN} | head -1 | awk -F ":" '{printf $2}'`
+
+echo ""
+echo "Success: Discovered the Folder Named | ${FOLDER_NAME_IN}"
+
+rm ${TEMP_FILE_ONE} 2> /dev/null
+return 0
+
+fi
+
+# Determine if the "IMPORT" Folder Exists
+declare -i IMPORT_FOLDER_EXISTS=`grep -ic "name:IMPORT" ${TEMP_FILE_ONE}`
+
+if [ $IMPORT_FOLDER_EXISTS -gt 0 ]
+then
+echo ""
+echo "Success: Discovered the Folder Structure | IMPORT"
+CIMITRA_IMPORT_ROOT_FOLDER_ID=`grep -iwB 1 "name:IMPORT" ${TEMP_FILE_ONE} | head -1 | awk -F : '{printf $2}'`
+fi
+
+# Make the IMPORT Folder
+if [ $IMPORT_FOLDER_EXISTS -eq 0 ]
+then
+CREATE_CIMITRA_FOLDER_ENTITY "${TEMP_FILE_ONE}" "IMPORT" "Cimitra Import API" "${CIMITRA_ROOT_FOLDER_ID}" 
+CIMITRA_IMPORT_ROOT_FOLDER_ID=`grep "_id:" ${TEMP_FILE_ONE} | head -1 | awk -F : '{printf $2}'`
+echo ""
+echo "Success: Created the Folder Structure | IMPORT"
+fi
+
+echo ""
+echo "Process: Discovering or Creating The Import | Hostname Folder Structure"
+ENDPOINT="/apps/${CIMITRA_IMPORT_ROOT_FOLDER_ID}/children" 
+echo "ENDPOINT=\"${ENDPOINT}\"" > ${TEMP_FILE_ONE}
+
+GET_URL "${TEMP_FILE_ONE}"
+
+# Determine if the "HOSTNAME" Folder Exists
+declare -i HOSTNAME_FOLDER_EXISTS=`grep -iwc "name:${HOSTNAME}" ${TEMP_FILE_ONE}`
+
+if [ $HOSTNAME_FOLDER_EXISTS -gt 0 ]
+then
+echo ""
+echo "Success: Discovered the Folder Structure | ${HOSTNAME}"
+CIMITRA_IMPORT_HOSTNAME_ROOT_FOLDER_ID=`grep -iwB 1 "name:${HOSTNAME}" ${TEMP_FILE_ONE} | head -1 | awk -F : '{printf $2}'`
+fi
+
+# Make the HOSTNAME Folder
+if [ $HOSTNAME_FOLDER_EXISTS -eq 0 ]
+then
+CREATE_CIMITRA_FOLDER_ENTITY "${TEMP_FILE_ONE}" "${HOSTNAME}" "Cimitra Import API | Server: ${HOSTNAME} Imported Commands" "${CIMITRA_IMPORT_ROOT_FOLDER_ID}" 
+CIMITRA_IMPORT_HOSTNAME_ROOT_FOLDER_ID=`grep "_id:" ${TEMP_FILE_ONE} | head -1 | awk -F : '{printf $2}'`
+echo ""
+echo "Success: Created the Folder Structure | ${HOSTNAME}"
+fi
+
+rm ${TEMP_FILE_ONE} 2> /dev/null
+
+}
+
+
+function ESTABLISH_CIMITRA_API_SESSION()
+{
+
+echo ""
+echo "Process: Establishing Connection to Cimitra Server"
+
+BASEURL="https://${CIMITRA_SERVER_ADDRESS}:${CIMITRA_SERVER_PORT}/api" 
+
+ENDPOINT="/users/login" 
+
+URL="${BASEURL}${ENDPOINT}" 
+
+DATA="{\"email\":\"${CIMITRA_SERVER_ADMIN_ACCOUNT}\",\"password\": \"${CIMITRA_SERVER_ADMIN_PASSWORD}\"}" 
+
+{
+RESPONSE=`curl -k -f -H "Content-Type:application/json" -X POST ${URL} --data "$DATA"`
+} 2> /dev/null
+
+declare -i STATUS=`echo "${RESPONSE}" | grep -c ',\"homeFolderId\":\"'` 
+
+if [ ${STATUS} -eq 0 ] 
+then 
+echo "--------------------------------------------------"
+echo ""
+curl -k ${CURL_OUTPUT_MODE} -H "Content-Type:application/json" -X POST ${URL} --data "$DATA"
+echo ""
+echo "--------------------------------------------------"
+echo "" 
+echo "Error: Could Not Establish Connection to Cimitra Server" 
+echo ""
+CALL_EXIT 1 
+fi 
+
+CIMITRA_API_SESSION_TOKEN=`echo "${RESPONSE}" | awk -F \"token\":\" '{printf $2}' | awk -F \" '{printf $1}'`
+
+echo ""
+echo "Success: Established Connection to Cimitra Server"
+
+
+echo "$RESPONSE" 1> ${TEMP_FILE_ONE}
+
+sed -e 's/[}"]*\(.\)[{"]*/\1/g;y/,/\n/' < ${TEMP_FILE_ONE} > ${TEMP_FILE_TWO}
+
+declare -i ADMIN_USER=`cat ${TEMP_FILE_TWO} | grep -ic "${CIMITRA_ADMIN_CHECK}"`
+
+if [ $ADMIN_USER -eq 0 ]
+then
+echo "" 
+echo "Error: The User ${CIMITRA_SERVER_ADMIN_ACCOUNT} Does Not Have Admin Rights!" 
+echo ""
+CALL_EXIT 1 
+fi
+
+CIMITRA_ROOT_FOLDER_ID=`cat ${TEMP_FILE_TWO} | grep -i "homeFolderId:" | head -1 | awk -F ":" '{printf $2}'`
+
+rm ${TEMP_FILE_ONE} 2> /dev/null
+
+rm ${TEMP_FILE_TWO} 2> /dev/null
+
+}
+
+
+function CONFIRM_CIMITRA_SERVER_CONNECTIVITY()
+{
+
+echo ""
+echo "Process: Testing Connection to Cimitra Server"
+
+CIMITRA_AGENT_BIN_FILE_LINUX="/usr/bin/cimagent"
+CIMITRA_AGENT_BIN_FILE_MAC="/usr/local/bin/cimagent"
+declare CIMITRA_AGENT_BIN_FILE="${CIMITRA_AGENT_BIN_FILE_LINUX}"
+declare -i LINUX=`test -f ${CIMITRA_AGENT_BIN_FILE_LINUX} ; echo $?`
+declare -i MAC=`test -f ${CIMITRA_AGENT_BIN_FILE_MAC} ; echo $?`
+declare -i NODE="1"
+declare -i MAC_OR_LINUX=0
+
+
+if [ $LINUX -eq 0 ]
+then
+CIMITRA_AGENT_BIN_FILE="${CIMITRA_AGENT_BIN_FILE_LINUX}"
+MAC_OR_LINUX=1
+else
+
+	if [ $MAC -eq 0 ]
+	then
+	CIMITRA_AGENT_BIN_FILE="${CIMITRA_AGENT_BIN_FILE_MAC}"
+	MAC_OR_LINUX=1
+	else
+	NODE="0"
+	CIMITRA_AGENT_BIN_FILE="/cimitra/cimagent.js"
+ 	# CIMITRA_AGENT_BIN_FILE=`ps -eaf | grep -v grep | grep 'cimagent.js s' | awk -F node '{printf $2}'`
+	fi
+
+fi
+
+test -f ${CIMITRA_AGENT_BIN_FILE}
+
+declare -i CIMITRA_AGENT_BIN_FILE_EXISTS=`echo $?`
+
+if [ $CIMITRA_AGENT_BIN_FILE_EXISTS -ne 0 ]
+then
+echo ""
+echo "Error: A Cimitra Agent is Not Installed"
+echo ""
+CALL_EXIT 1
+fi
+
+TEMP_FILE_ONE="${TEMP_FILE_DIRECTORY}/$$.1.tmp"
+
+TEMP_FILE_TWO="${TEMP_FILE_DIRECTORY}/$$.2.tmp"
+
+if [ $MAC_OR_LINUX -eq 1 ]
+then
+${CIMITRA_AGENT_BIN_FILE} 1> ${TEMP_FILE_ONE}
+else
+node ${CIMITRA_AGENT_BIN_FILE} 1> ${TEMP_FILE_ONE}
+fi
+
+
+CIMITRA_SERVER_ADDRESS=`cat ${TEMP_FILE_ONE} | grep -iA 1 "hostname" | tail -1 | awk -F "=" '{printf $2}' | sed 's/ //g'`
+
+CIMITRA_SERVER_PORT=`cat ${TEMP_FILE_ONE} | grep -iA 1 "hostport" | tail -1 | awk -F "=" '{printf $2}' | sed 's/ //g'`
+
+CIMITRA_PAIRED_AGENT_ID=`cat ${TEMP_FILE_ONE} | grep -iA 1 "agentid" | tail -1 | awk -F "=" '{printf $2}' | sed 's/ //g'`
+
+
+rm $TEMP_FILE_ONE
+
+{
+cat < /dev/tcp/${CIMITRA_SERVER_ADDRESS}:${CIMITRA_SERVER_PORT} &
+} 2> /dev/null
+
+CONNECTION_PROCESS=$!
+
+declare -i CONNECTION_PROCESS_WORKED=`ps -aux | grep ${CONNECTION_PROCESS} | grep -c "cat"`
+
+if [ $CONNECTION_PROCESS_WORKED -ne 0 ]
+then
+echo ""
+echo "The Cimitra Server is Not Accessible"
+echo ""
+CALL_EXIT 1
+fi
+
+}
+
+function CIMITRA_APP_CREATE()
+{
+
+IO_FILE="$1"
+
+source ${IO_FILE} 2> /dev/null
+
+
+echo ""
+echo "Process: Creating Cimitra Application: ${NAME}"
+
+
+JSON_TEMP_FILE_ONE="${TEMP_FILE_DIRECTORY}/$$.1.tmp.json"
+
+BASEURL="https://${CIMITRA_SERVER_ADDRESS}:${CIMITRA_SERVER_PORT}/api" 
+
+ENDPOINT="/apps" 
+
+URL="${BASEURL}${ENDPOINT}"
+
+source ${IO_FILE}
+
+rm ${IO_FILE}
+
+if [ $INCLUDE_REGEX_EXAMPLE_SWITCHES -eq 1 ]
+then
+
+echo "{
+\"type\": 1,
+\"status\": \"active\",
+\"name\": \"${NAME}\",
+\"parentFolderId\":  \"${PARENT_FOLDER_ID}\",
+\"description\": \"\",
+\"platform\": \"${CIMITRA_PAIRED_AGENT_PLATFORM}\",
+\"agentId\": \"${CIMITRA_PAIRED_AGENT_ID}\",
+\"interpreter\": \"${APP_INTERPRETER}\",
+\"command\": \"${COMMAND}\",
+\"params\": \"${PARAMS}\",
+\"notes\": \"\",
+\"injectParams\": [
+{
+\"param\": \"-a\",
+\"value\": \"\",
+\"label\": \"SWITCH_ONE\",
+\"placeholder\": \"\",
+\"private\": false,
+\"regex\": \"/^[A-Za-z-_0-9]+$/\"
+},
+{
+\"param\": \"-b\",
+\"value\": \"\",
+\"label\": \"SWITCH_TWO\",
+\"placeholder\": \"\",
+\"private\": false,
+\"regex\": \"/^[A-Za-z-_0-9+=^#@~ ]+$/\"
+}
+]
+}" 1> ${JSON_TEMP_FILE_ONE}
+
+else
+
+echo "{
+\"type\": 1,
+\"status\": \"active\",
+\"name\": \"${NAME}\",
+\"parentFolderId\":  \"${PARENT_FOLDER_ID}\",
+\"description\": \"\",
+\"platform\": \"${CIMITRA_PAIRED_AGENT_PLATFORM}\",
+\"agentId\": \"${CIMITRA_PAIRED_AGENT_ID}\",
+\"interpreter\": \"${APP_INTERPRETER}\",
+\"command\": \"${COMMAND}\",
+\"params\": \"${PARAMS}\",
+\"notes\": \"\",
+\"injectParams\":[]
+}" 1> ${JSON_TEMP_FILE_ONE}
+
+
+fi
+
+
+
+
+{
+RESPONSE=`curl -k ${CURL_OUTPUT_MODE} -H 'Accept: application/json' \
+-H "Authorization: Bearer ${CIMITRA_API_SESSION_TOKEN}" \
+-X POST ${URL} -d @${JSON_TEMP_FILE_ONE} \
+-H "Content-Type: application/json"` 
+} 1> /dev/null 2> /dev/null
+
+rm ${JSON_TEMP_FILE_ONE} 2> /dev/null
+
+if [ $VERBOSE_MODE -eq 1 ]
+then
+echo "${RESPONSE}"
+fi
+
+echo ""
+echo "Success: Created Cimitra Application: ${NAME}"
+echo ""
+
+TEMP_FILE_ONE="${TEMP_FILE_DIRECTORY}/$$.1.tmp"
+
+ENDPOINT="/apps" 
+
+echo "ENDPOINT=\"${ENDPOINT}\"" > ${TEMP_FILE_ONE}
+
+GET_URL "${TEMP_FILE_ONE}"
+
+declare APP_UNIQUE_ID=`cat ${TEMP_FILE_ONE} | grep  "_id:" | tail -1 | awk -F : '{printf $2}'` 
+
+echo "Information: App Unique ID: ${APP_UNIQUE_ID}" 
+echo ""
+
+rm ${TEMP_FILE_ONE} 2> /dev/null
+
+
+}
+
+function GET_CIMITRA_AGENT_DETAILS()
+{
+
+TEMP_FILE_ONE="${TEMP_FILE_DIRECTORY}/$$.1.tmp"
+
+echo ""
+echo "Process: Discovering Cimitra Agent Details"
+# ENDPOINT="/agent/${CIMITRA_PAIRED_AGENT_ID}" 
+ENDPOINT="/agent" 
+echo "ENDPOINT=\"${ENDPOINT}\"" > ${TEMP_FILE_ONE}
+
+GET_URL "${TEMP_FILE_ONE}"
+
+CIMITRA_PAIRED_AGENT_EXISTS=`cat ${TEMP_FILE_ONE} | grep -c "_id:${CIMITRA_PAIRED_AGENT_ID}" `
+
+if [ $CIMITRA_PAIRED_AGENT_EXISTS -eq 0 ]
+then
+echo "" 
+echo "Error: The Installed Agent is Not Paired With The Server: ${CIMITRA_SERVER_ADDRESS}" 
+echo ""
+CALL_EXIT "1"
+
+fi
+
+CIMITRA_PAIRED_AGENT_PLATFORM=`cat ${TEMP_FILE_ONE} | grep -A10 ${CIMITRA_PAIRED_AGENT_ID} | grep "platform:" | head -1 | awk -F ":" '{printf $2}'`
+
+
+rm ${TEMP_FILE_ONE}
+}
+
+function CREATE_CIMITRA_APP_AND_INPUTS()
+{
+
+echo ""
+echo "Process: Creating Cimitra Application: ${CIMITRA_APP_NAME_IN}"
+
+JSON_TEMP_FILE_ONE="${TEMP_FILE_DIRECTORY}/$$.1.tmp.json"
+
+BASEURL="https://${CIMITRA_SERVER_ADDRESS}:${CIMITRA_SERVER_PORT}/api" 
+
+ENDPOINT="/apps" 
+
+URL="${BASEURL}${ENDPOINT}"
+
+if [ $VERBOSE_MODE -eq 1 ]
+then
+echo "App Name = $CIMITRA_APP_NAME_IN"
+echo "Folder = ${CIMITRA_IMPORT_HOSTNAME_ROOT_FOLDER_ID}"
+echo "Paired Agent ID = ${CIMITRA_PAIRED_AGENT_ID}"
+echo "Paired Agent Platform =  ${CIMITRA_PAIRED_AGENT_PLATFORM}"
+echo "Interpeter = ${CIMITRA_APP_INTERPRETER_IN}"
+echo "Command To Run = ${CIMITRA_APP_COMMAND_IN}"
+echo "Switches = ${CIMITRA_APP_SWITCHES_IN}"
+echo "Information = ${CIMITRA_INFO_NOTES_IN}"
+fi
+
+
+case ${INPUT_FIELD_COUNTER} in
+0)
+
+echo "{
+\"type\": 1,
+\"status\": \"active\",
+\"name\": \"${CIMITRA_APP_NAME_IN}\",
+\"parentFolderId\":  \"${CIMITRA_IMPORT_HOSTNAME_ROOT_FOLDER_ID}\",
+\"description\": \"${CIMITRA_INFO_NOTES_IN}\",
+\"platform\": \"${CIMITRA_PAIRED_AGENT_PLATFORM}\",
+\"agentId\": \"${CIMITRA_PAIRED_AGENT_ID}\",
+\"interpreter\": \"${CIMITRA_APP_INTERPRETER_IN}\",
+\"command\": \"${CIMITRA_APP_COMMAND_IN}\",
+\"params\": \"${CIMITRA_APP_SWITCHES_IN}\",
+\"notes\": \"\",
+\"injectParams\":[]
+}" 1> ${JSON_TEMP_FILE_ONE}
+
+;;
+1)
+
+echo "{
+\"type\": 1,
+\"status\": \"active\",
+\"name\": \"${CIMITRA_APP_NAME_IN}\",
+\"parentFolderId\":  \"${CIMITRA_IMPORT_HOSTNAME_ROOT_FOLDER_ID}\",
+\"description\": \"${CIMITRA_INFO_NOTES_IN}\",
+\"platform\": \"${CIMITRA_PAIRED_AGENT_PLATFORM}\",
+\"agentId\": \"${CIMITRA_PAIRED_AGENT_ID}\",
+\"interpreter\": \"${CIMITRA_APP_INTERPRETER_IN}\",
+\"command\": \"${CIMITRA_APP_COMMAND_IN}\",
+\"params\": \"${CIMITRA_APP_SWITCHES_IN}\",
+\"notes\": \"\",
+\"injectParams\": [
+{
+\"param\": \"${INPUT_ONE_FLAG}\",
+\"value\": \"\",
+\"label\": \"${INPUT_ONE_NAME}\",
+\"placeholder\": \"${INPUT_ONE_EXAMPLE}\",
+\"private\": ${INPUT_ONE_MASK},
+\"regex\": \"/^[A-Za-z-_0-9 ]+$/\"
+}
+]
+}" 1> ${JSON_TEMP_FILE_ONE}
+
+;;
+
+2)
+
+echo "{
+\"type\": 1,
+\"status\": \"active\",
+\"name\": \"${CIMITRA_APP_NAME_IN}\",
+\"parentFolderId\":  \"${CIMITRA_IMPORT_HOSTNAME_ROOT_FOLDER_ID}\",
+\"description\": \"${CIMITRA_INFO_NOTES_IN}\",
+\"platform\": \"${CIMITRA_PAIRED_AGENT_PLATFORM}\",
+\"agentId\": \"${CIMITRA_PAIRED_AGENT_ID}\",
+\"interpreter\": \"${CIMITRA_APP_INTERPRETER_IN}\",
+\"command\": \"${CIMITRA_APP_COMMAND_IN}\",
+\"params\": \"${CIMITRA_APP_SWITCHES_IN}\",
+\"notes\": \"\",
+\"injectParams\": [
+{
+\"param\": \"${INPUT_ONE_FLAG}\",
+\"value\": \"\",
+\"label\": \"${INPUT_ONE_NAME}\",
+\"placeholder\": \"${INPUT_ONE_EXAMPLE}\",
+\"private\": ${INPUT_ONE_MASK},
+\"regex\": \"/^[A-Za-z-_0-9 ]+$/\"
+},
+{
+\"param\": \"${INPUT_TWO_FLAG}\",
+\"value\": \"\",
+\"label\": \"${INPUT_TWO_NAME}\",
+\"placeholder\": \"${INPUT_TWO_EXAMPLE}\",
+\"private\": ${INPUT_TWO_MASK},
+\"regex\": \"/^[A-Za-z-_0-9 ]+$/\"
+}
+]
+}" 1> ${JSON_TEMP_FILE_ONE}
+
+;;
+
+3)
+
+echo "{
+\"type\": 1,
+\"status\": \"active\",
+\"name\": \"${CIMITRA_APP_NAME_IN}\",
+\"parentFolderId\":  \"${CIMITRA_IMPORT_HOSTNAME_ROOT_FOLDER_ID}\",
+\"description\": \"${CIMITRA_INFO_NOTES_IN}\",
+\"platform\": \"${CIMITRA_PAIRED_AGENT_PLATFORM}\",
+\"agentId\": \"${CIMITRA_PAIRED_AGENT_ID}\",
+\"interpreter\": \"${CIMITRA_APP_INTERPRETER_IN}\",
+\"command\": \"${CIMITRA_APP_COMMAND_IN}\",
+\"params\": \"${CIMITRA_APP_SWITCHES_IN}\",
+\"notes\": \"\",
+\"injectParams\": [
+{
+\"param\": \"${INPUT_ONE_FLAG}\",
+\"value\": \"\",
+\"label\": \"${INPUT_ONE_NAME}\",
+\"placeholder\": \"${INPUT_ONE_EXAMPLE}\",
+\"private\": ${INPUT_ONE_MASK},
+\"regex\": \"/^[A-Za-z-_0-9 ]+$/\"
+},
+{
+\"param\": \"${INPUT_TWO_FLAG}\",
+\"value\": \"\",
+\"label\": \"${INPUT_TWO_NAME}\",
+\"placeholder\": \"${INPUT_TWO_EXAMPLE}\",
+\"private\": ${INPUT_TWO_MASK},
+\"regex\": \"/^[A-Za-z-_0-9 ]+$/\"
+},
+{
+\"param\": \"${INPUT_THREE_FLAG}\",
+\"value\": \"\",
+\"label\": \"${INPUT_THREE_NAME}\",
+\"placeholder\": \"${INPUT_THREE_EXAMPLE}\",
+\"private\": ${INPUT_THREE_MASK},
+\"regex\": \"/^[A-Za-z-_0-9 ]+$/\"
+}
+]
+}" 1> ${JSON_TEMP_FILE_ONE}
+
+;;
+
+esac
+# Create Object
+{
+RESPONSE=`curl -k ${CURL_OUTPUT_MODE} -H 'Accept: application/json' \
+-H "Authorization: Bearer ${CIMITRA_API_SESSION_TOKEN}" \
+-X POST ${URL} -d @${JSON_TEMP_FILE_ONE} \
+-H "Content-Type: application/json"` 
+} 1> /dev/null 2> /dev/null
+
+rm ${JSON_TEMP_FILE_ONE} 2> /dev/null
+
+if [ $VERBOSE_MODE -eq 1 ]
+then
+echo "${RESPONSE}"
+fi
+
+echo ""
+echo "Success: Created Cimitra Application: ${CIMITRA_APP_NAME_IN}"
+echo ""
+
+TEMP_FILE_ONE="${TEMP_FILE_DIRECTORY}/$$.1.tmp"
+
+ENDPOINT="/apps" 
+
+echo "ENDPOINT=\"${ENDPOINT}\"" > ${TEMP_FILE_ONE}
+
+GET_URL "${TEMP_FILE_ONE}"
+
+declare APP_UNIQUE_ID=`cat ${TEMP_FILE_ONE} | grep  "_id:" | tail -1 | awk -F : '{printf $2}'` 
+
+echo "Information: App Unique ID: ${APP_UNIQUE_ID}" 
+echo ""
+
+rm ${TEMP_FILE_ONE} 2> /dev/null
+
+}
+
+function CREATE_CIMITRA_APP()
+{
+
+if [ $VERBOSE_MODE -eq 1 ]
+then
+echo "Command In = $CIMITRA_APP_COMMAND_IN"
+fi
+
+if [ $CIMITRA_APP_NAME_IN_SET -eq 0 ]
+then
+CIMITRA_APP_NAME_ONE=`echo "${CIMITRA_APP_COMMAND_IN}" | tr [a-z] [A-Z]`
+HOSTNAME=`hostname | tr [a-z] [A-Z]`
+CIMITRA_APP_NAME_IN="${HOSTNAME} ${CIMITRA_APP_NAME_ONE}"
+fi
+
+
+if [ $CIMITRA_APP_INTERPRETER_IN_SET -eq 0 ]
+then
+CIMITRA_APP_INTERPRETER_IN=""
+INTERPRETER_TYPE_GUESS
+
+	if [[ $INTERPRETER_SUGGESTION == "0" || $INTERPRETER_SUGGESTION == "1" ]]
+	then
+	CIMITRA_APP_INTERPRETER_IN=""
+	else
+	CIMITRA_APP_INTERPRETER_IN="${INTERPRETER_SUGGESTION}"
+	
+		if [ $CIMITRA_APP_NAME_IN_SET -eq 0 ]
+		then
+		CIMITRA_APP_NAME_ONE=`basename "${CIMITRA_APP_COMMAND_IN}" | tr [a-z] [A-Z]`
+		HOSTNAME=`hostname | tr [a-z] [A-Z]`
+		CIMITRA_APP_NAME_IN="${HOSTNAME} ${CIMITRA_APP_NAME_ONE}"
+		fi
+	fi
+	
+
+fi
+
+if [ $VERBOSE_MODE -eq 1 ]
+then
+echo "App Name = $CIMITRA_APP_NAME_IN"
+fi
+
+echo "NAME=\"${CIMITRA_APP_NAME_IN}\"" > ${TEMP_FILE_ONE}
+echo "DESCRIPTION=\"\"" >> ${TEMP_FILE_ONE}
+echo "NOTES=\"Imported with Cimitra Import Utility\"" >> ${TEMP_FILE_ONE}
+echo "PLATFORM=\"${CIMITRA_PAIRED_AGENT_PLATFORM}\"" >> ${TEMP_FILE_ONE}
+echo "COMMAND=\"${CIMITRA_APP_COMMAND_IN}\"" >> ${TEMP_FILE_ONE}
+if [ $BULK_MODE -eq 0 ]
+then
+	if [ $CIMITRA_APP_SWITCHES_IN_SET -eq 0 ]
+	then
+	echo "PARAMS=\"\"" >> ${TEMP_FILE_ONE}
+	else
+	echo "PARAMS=\"${CIMITRA_APP_SWITCHES_IN}\"" >> ${TEMP_FILE_ONE}
+	fi
+fi
+echo "PARENT_FOLDER_ID=\"${CIMITRA_IMPORT_HOSTNAME_ROOT_FOLDER_ID}\"" >> ${TEMP_FILE_ONE}
+echo "APP_INTERPRETER=\"${CIMITRA_APP_INTERPRETER_IN}\"" >> ${TEMP_FILE_ONE}
+
+CIMITRA_APP_CREATE ${TEMP_FILE_ONE}
+}
+
+CONFIRM_CORRECT_INPUT
+if [ $SHOW_HELP_SCREEN -eq 1 ]
+then
+SHOW_HELP
+CALL_EXIT "0"
+fi
+
+# The Main Function
+function main()
+{
+CONFIRM_CORRECT_INPUT
+echo -en "\033[0;93m\033[0;92m"
+# echo "D1: CIMITRA_PAIRED_AGENT_ID = ${CIMITRA_PAIRED_AGENT_ID}"
+CONFIRM_CIMITRA_SERVER_CONNECTIVITY
+# echo "D2: CIMITRA_PAIRED_AGENT_ID = ${CIMITRA_PAIRED_AGENT_ID}"
+ESTABLISH_CIMITRA_API_SESSION
+# echo "D3: CIMITRA_PAIRED_AGENT_ID = ${CIMITRA_PAIRED_AGENT_ID}"
+GET_CIMITRA_AGENT_DETAILS
+# echo "D4: CIMITRA_PAIRED_AGENT_ID = ${CIMITRA_PAIRED_AGENT_ID}"
+CREATE_OR_ESTABLISH_CIMITRA_IMPORT_FOLDER
+# echo "D5: CIMITRA_PAIRED_AGENT_ID = ${CIMITRA_PAIRED_AGENT_ID}"
+# CREATE_CIMITRA_APP
+CREATE_CIMITRA_APP_AND_INPUTS
+CALL_EXIT "0"
+}
+
+if [ $DELETE_IMPORT_APPS -eq 1 ]
+then
+echo -en "\033[0;93m\033[0;92m"
+
+declare -i CIMITRA_API_SCRIPT_SETTINGS_FILE_EXISTS=`test -f ${CIMITRA_API_SCRIPT_SETTINGS_FILE} ; echo $?`
+
+if [ $CIMITRA_API_SCRIPT_SETTINGS_FILE_EXISTS -ne 0 ]
+then
+MENU_SCREEN
+fi
+
+CONFIRM_CIMITRA_SERVER_CONNECTIVITY
+ESTABLISH_CIMITRA_API_SESSION
+GET_CIMITRA_AGENT_DETAILS
+CREATE_OR_ESTABLISH_CIMITRA_IMPORT_FOLDER
+REMOVE_ALL_APPS_FROM_FOLDER
+CALL_EXIT "0"
+fi
+
+
+if [ $BULK_MODE -eq 1 ]
+then
+
+declare -i RUN_COUNTER=0
+
+while [ $RUN_COUNTER -eq 0 ]
+do
+declare INTERPRETER_SUGGESTION="1"
+declare CIMITRA_APP_INTERPRETER_IN_SET=0
+declare -i APP_COMMMAND_IN_PROCESSED=0
+echo -en "\033[0;93m\033[0;92m"
+MENU_SCREEN
+# echo "D1: CIMITRA_PAIRED_AGENT_ID = ${CIMITRA_PAIRED_AGENT_ID}"
+CONFIRM_CIMITRA_SERVER_CONNECTIVITY
+# echo "D2: CIMITRA_PAIRED_AGENT_ID = ${CIMITRA_PAIRED_AGENT_ID}"
+ESTABLISH_CIMITRA_API_SESSION
+# echo "D3: CIMITRA_PAIRED_AGENT_ID = ${CIMITRA_PAIRED_AGENT_ID}"
+GET_CIMITRA_AGENT_DETAILS
+# echo "D4: CIMITRA_PAIRED_AGENT_ID = ${CIMITRA_PAIRED_AGENT_ID}"
+CREATE_OR_ESTABLISH_CIMITRA_IMPORT_FOLDER
+# echo "D5: CIMITRA_PAIRED_AGENT_ID = ${CIMITRA_PAIRED_AGENT_ID}"
+CREATE_CIMITRA_APP
+done
+
+fi
+
+
+if [ $BULK_MODE -eq 0 ]
+then
+main
+fi
+
